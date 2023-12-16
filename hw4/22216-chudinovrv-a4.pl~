@@ -28,7 +28,7 @@ main() :-
     first_node(Best_schedule, Cheapest_event),
     first_cost(Best_schedule, Cheapest_cost),
     pretty_print(schedule(Cheapest_event)),
-    format('All cost: ~w~n', [Cheapest_cost]),
+    format('All cost: ~w', [Cheapest_cost]),
     clean.
 
 
