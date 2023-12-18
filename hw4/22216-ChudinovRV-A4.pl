@@ -7,6 +7,12 @@
 :- use_module(print).
 :- use_module(utils).
 :- use_module(cost).
+%для измерения времени
+measure_time(Goal, Time) :-
+    statistics(runtime, [Start|_]),
+    call(Goal),
+    statistics(runtime, [End|_]),
+    Time is End - Start.
 
 %Точка входа
 main() :-
@@ -22,8 +28,9 @@ main() :-
     write('===============\n'),
     write('||   Start of processing   ||\n'),
     write('===============\n'),
-    main_loop(node([], 0, 0), Number_of_exams, Exam_IDs, Rooms_info, Best_schedule),
+    measure_time(main_loop(node([], 0, 0), Number_of_exams, Exam_IDs, Rooms_info, Best_schedule), Time),
     write('===============\n'),
+    format('Time: ~w~n', [Time]),
 
     first_node(Best_schedule, Cheapest_event),
     first_cost(Best_schedule, Cheapest_cost),
@@ -100,24 +107,49 @@ generate_feasible_exam_times(event(Exam_ID, Room_ID, Day, From), Till, State, Ac
 % Данный предикат проверяет, что некоторый ивент можно разместить в уже
 % созданный и чем-то заполненный список событий.
 is_event_possible(event(Exam_ID, Room_ID, Day, Hour), Events) :-
-    classroom_available(Room_ID, Day, From, To),
-    exam_duration(Exam_ID, Duration),
-    classroom_capacity(Room_ID, Capacity),
-    ex_season_starts(Start_day),
-    ex_season_ends(End_day),
-    between(Start_day, End_day, Day),
-    length(Events, List_length),
+    ex_season_starts(Start_day), %первый день экзов
+    ex_season_ends(End_day), %последний день экзов
+    between(Start_day, End_day, Day), %проверка, что экзамен в промежутке
+
+    classroom_available(Room_ID, Day, From, To), % получаем с какого по какое доступен класс
+    exam_duration(Exam_ID, Duration), % получаем длительность экзамена
+    classroom_capacity(Room_ID, Capacity), % вместимость класса по людям
+    st_group(Exam_ID, Students),
+    length(Students, Number_of_students),
+    Number_of_students =< Capacity,
 
     Exam_lasts #= To - Duration,
-    between(From, Exam_lasts, Hour),
-    List_length #=< Capacity,
+    between(From, Exam_lasts, Hour), % можно ли провести экзамен  вданные часы
     not(intersection_check(event(Exam_ID, Room_ID, Day, Hour), Events)).
+
+%is_accommodates(_, []) :- !, fail.
+%is_accommodates(event(Exam_ID, Room_ID, Day, From),
+%    [event(Exam_ID0,Room_ID0,Day0,From0)|T]) :-
+
+% Предикат верен тогда и только тогда, когда есть любое пересечение
+intersection_check(_, []) :- !, fail.
+intersection_check(event(Exam_ID, Room_ID, Day, From),
+    [event(Exam_ID0,Room_ID0,Day0,From0)|T] ) :-
+            Exam_ID == Exam_ID0;
+            (
+                Day == Day0,
+                exam_duration(Exam_ID, Duration),
+                exam_duration(Exam_ID0, Duration0),
+                To #= From + Duration,
+                To0 #= From0 + Duration0,
+                time_check(From, To, From0, To0),
+                           ( student_follows_both_classes(Exam_ID, Exam_ID0);
+                             teacher_teaches_both_classes(Exam_ID, Exam_ID0);
+                             Room_ID == Room_ID0));
+                intersection_check(event(Exam_ID, Room_ID, Day, From), T).
+
 
 
 %Данный предикат в 4 аргумент ложит новое самое дешевое расписание.
 % Предикт берёт наидешовейшее расписание длинны N с N-ой итерации и
 % исправляет его, прибавляя state и по новой находит расписание с самым
 % маленьким штрафом
+%
 create_new_states(_, [], Min_node, Min_node).
 create_new_states(node(State, Length, Cost), [Event|Rest], node(Second_state, Second_length, Second_cost), Result) :-
     cost(schedule([Event|State]), New_cost),
@@ -130,30 +162,12 @@ create_new_states(node(State, Length, Cost), [Event|Rest], node(Second_state, Se
 % Предикат верен тогда и только тогда, когда есть пересечение по
 % времени
 time_check(From1, To1, From2, To2) :-
-    (From2 =< From1, From1 =< To2) ;
+    (From2 =< From1, From1 =< To2);
     (From1 =< From2, From2 =< To1).
 
 dinner_check(From, To) :-
-    From >= 13;
-    To =< 12.
-% Предикат верен тогда и только тогда, когда есть любое пересечение
-intersection_check(_, []) :- !, fail.
-intersection_check(event(Exam_ID, Room_ID, Day, From),
-    [event(Exam_ID0,Room_ID0,Day0,From0)|T] ) :-
-            Exam_ID == Exam_ID0;
-            (
-                Day = Day0,
-                exam_duration(Exam_ID, Duration),
-                exam_duration(Exam_ID0, Duration0),
-                To #= From + Duration,
-                To0 #= From0 + Duration0,
-                time_check(From, To, From0, To0),
-                dinner_check(From0, To0),
-                (student_follows_both_classes(Exam_ID, Exam_ID0);
-                 teacher_teaches_both_classes(Exam_ID, Exam_ID0);
-                 Room_ID == Room_ID0));
-                 intersection_check(event(Exam_ID, Room_ID, Day, From), T).
-
+    From =< 13;
+    To >= 12.
 
 
 
